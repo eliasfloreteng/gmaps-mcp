@@ -126,6 +126,11 @@ export class BaseMcpServer {
 
         const sessionServer = this.createMcpServer();
         await sessionServer.connect(transport);
+      } else if (sessionId) {
+        // Unknown session (e.g. the server restarted): the spec's 404 tells the
+        // client to start a new session instead of failing every call.
+        this.sendSessionNotFound(res);
+        return;
       } else {
         // Invalid request
         res.status(400).json({
@@ -148,8 +153,12 @@ export class BaseMcpServer {
     // Reusable handler for GET and DELETE requests
     const handleSessionRequest = async (req: Request, res: Response) => {
       const sessionId = req.headers["mcp-session-id"] as string | undefined;
-      if (!sessionId || !this.sessions[sessionId]) {
-        res.status(400).send("Invalid or missing session ID");
+      if (!sessionId) {
+        res.status(400).send("Missing session ID");
+        return;
+      }
+      if (!this.sessions[sessionId]) {
+        this.sendSessionNotFound(res);
         return;
       }
 
@@ -178,6 +187,14 @@ export class BaseMcpServer {
     this.httpServer = app.listen(port, host, () => {
       Logger.log(`[${this.serverName}] HTTP server listening on ${host}:${port}`);
       Logger.log(`[${this.serverName}] MCP endpoint available at http://${displayHost}:${port}/mcp`);
+    });
+  }
+
+  private sendSessionNotFound(res: Response): void {
+    res.status(404).json({
+      jsonrpc: "2.0",
+      error: { code: -32001, message: "Session not found" },
+      id: null,
     });
   }
 
